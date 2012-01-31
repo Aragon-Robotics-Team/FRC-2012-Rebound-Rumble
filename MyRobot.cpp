@@ -1,5 +1,7 @@
 #include "WPILib.h"
 #include "Target.h"
+#include "CamPIDSource.h"
+#include <AnalogChannel.h>
 #include <math.h>
 
 /**
@@ -13,28 +15,46 @@ class RobotDemo : public SimpleRobot
 	KinectStick *leftArm;	//The Left arm should be constructed as stick 1
 	KinectStick *rightArm; 	//The Right arm should be constructed as stick 2
 	Joystick *leftStick, *rightStick; // joysticks
-	Jaguar *conveyor; // ball-collecting roller
-	Jaguar *spinner; // Window motor that powers Lazy Susan
-	Jaguar *shooter; // shooter wheels
-	Gyro *gyro; // gyro
+	Victor *conveyorMotor; // ball-collecting conveyor
+	Jaguar *turretMotor; // Window motor that powers Lazy Susan
+	Jaguar *shooterMotor; // shooter wheels
+	Victor *leverMotor; // lever motor
+	Gyro *gyro; // gyro for measuring elevationAngle
+	AnalogChannel *turretPot; // potentiometer for measuring turretAngle
+	
+	CamPIDSource *cameraSource; // PID Source for camera
+	PIDController *turretControl; // PID controller for centering target in camera's field
 	
 	float leftSpeed, rightSpeed;
 	float distance; // distance from target
-	float shooterAngle; // angle of shooter and Lazy Susan
+	float turretAngle; // angle of turret and Lazy Susan
+	float shooterSpeed; // speed of shooterMotor
+	float elevationAngle; // angle of robot from ground
 	int ballCounter; // number of balls in possession
 
 public:
 	RobotDemo(void)
 	{
+		// Initialize drivetrain, Kinect, and joysticks
 		drive = new RobotDrive(1, 2);
 		leftArm = new KinectStick(1);
 		rightArm = new KinectStick(2);
 		leftStick = new Joystick(1);
 		rightStick = new Joystick(2);
-		//conveyor = new Jaguar(#);
-		//spinner = new Jaguar(#);
-		//shooter = new Jaguar(#);
-		//gyro = new Gyro(5);
+		
+		// Initialize motors
+		conveyorMotor = new Victor(1); // change slot
+		turretMotor = new Jaguar(1); // change slot
+		shooterMotor = new Jaguar(2); // change slot
+		leverMotor = new Victor(2); // change slot
+		
+		// Initialize sensors and PID Controller
+		gyro = new Gyro(5); // change slot
+		turretPot = new AnalogChannel(1); // change slot
+		
+		cameraSource = new CamPIDSource();
+		turretControl = new PIDController(0.1, 0.001, 0.0, cameraSource, turretMotor);
+		turretControl->Enable();
 		
 		// Initialize camera
 		AxisCamera &camera = AxisCamera::GetInstance("10.8.40.11");
@@ -63,33 +83,42 @@ public:
 	}
 	
 	/*
-	// get distance based on camera image
+	void deployLever()
+	{
+		
+	}*/
+	
+	
+	// get distance based on camera image's target width
 	float getDistance(float targetWidth)
 	{
 		return distance;
 	}
 	
-	// rotates Lazy Susan to face target based on camera image
-	void rotateShooter(float newPosition)
+	// rotates turret and Lazy Susan to face target based on camera image
+	void rotateTurret(float newPosition)
 	{
-		if newPosition > 0
-			rotate spinner to right
-		else if to the left
-			rotate spinner to the left
-		else
-			spinner->Set(0.0);
-	}*/
+		// set limit based on turret angle
+		turretAngle = turretPot->GetVoltage();
+		if (turretAngle <= 0 || turretAngle >= 512) // adjust bounds
+			newPosition = 0;
+		
+		cameraSource->SetSource(newPosition);
+		turretControl->SetSetpoint(0);
+		
+	}
 	
-	// adjusts speed of shooter motor based on distance from target
-	void adjustShooter(float distance)
+	// adjusts speed of shooter motor based on distance from target; returns speed
+	float adjustShooter(float distance)
 	{
 		// adjust shooter RPM based on distance and constant ratio
 		float power = sqrt(distance * 26688.017) / 15000;
 		if (power > 1.0)
 			power = 1.0;
-		else if (power < -1.0)
+		else if (shooterSpeed < -1.0)
 			power = -1.0;
-		shooter->Set(power);
+		shooterMotor->Set(power);
+		return power;
 	}
 	
 	// fire shooter
@@ -112,8 +141,8 @@ public:
 			drive->TankDrive(leftSpeed, rightSpeed);
 			
 			// aim and ready shooter
-			//rotateShooter(cameraInputStuff);
-			//adjustShooter(getDistance(cameraInputStuff));
+			//rotateTurret(cameraInputStuff);
+			//shooterSpeed = adjustShooter(getDistance(cameraInputStuff));
 			
 			Wait(.01); // Delay 10ms to reduce processing load
 		}
@@ -142,12 +171,12 @@ public:
 			
 			// turn on conveyor if balls in possession < 3
 			/*if (balls < 3)
-				conveyor->Set(1.0);
+				conveyorMotor->Set(1.0);
 			else
-				conveyor->Set(0.0);
+				conveyorMotor->Set(0.0);
 			}*/
 			
-			//gyroAngle = gyro->GetAngle();
+			//elevationAngle = gyro->GetAngle();
 			
 			if (camera.IsFreshImage())
 			{
@@ -159,11 +188,11 @@ public:
 				
 				//float targetWidth = targets.targetWidth;
 				//distance = getDistance(targetWidth);
-				//float newPosition = targets.newPosition;
+				//float newPosition = targets.center_x;
 				
 				// aim and ready shooter
-				//rotateShooter(newPosition);
-				//adjustShooter(distance);
+				//rotateTurret(newPosition);
+				//shooterSpeed = adjustShooter(distance);
 			}
 			
 			// shoot if right trigger pressed
@@ -174,7 +203,8 @@ public:
 			*/
 			
 			// print LCD messages
-			ds->PrintfLine(DriverStationLCD::kUser_Line1, "angle: %.2f", shooterAngle);
+			ds->PrintfLine(DriverStationLCD::kUser_Line1, "angle: %.2f", turretAngle);
+			ds->PrintfLine(DriverStationLCD::kUser_Line2, "shooter speed: %.2f", shooterSpeed);
 			ds->UpdateLCD();
 			
 			Wait(0.005);				// wait for a motor update time
