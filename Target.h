@@ -7,8 +7,10 @@
 class Target
 {
 public:
-
-    static vector<Target> FindRectangularTargets(HSLImage *image);
+	double m_xPos;
+	double m_width;
+	
+    static Target FindRectangularTarget(HSLImage *image);
     
 };
 
