@@ -51,10 +51,12 @@ public:
 		//leverMotor = new Victor(2); // change slot
 		
 		// Initialize sensors and PID Controller
+		//counterSwitch = new DigitalInput(1); // change slot
 		//gyro = new Gyro(1); // change slot
+		//gyro->SetSensitivity(0.01);
 		//turretPot = new AnalogChannel(1); // change slot
 		
-		cameraSource = new CamPIDSource();
+		//cameraSource = new CamPIDSource();
 		//turretControl = new PIDController(0.1, 0.001, 0.0, cameraSource, turretMotor);
 		//turretControl->SetOutputRange(-0.6, 0.6);
 		//turretControl->Enable();
@@ -178,14 +180,14 @@ public:
 	 */
 	void OperatorControl(void)
 	{
-		GetWatchdog().SetEnabled(false); // ENABLE LATER
+		GetWatchdog().SetEnabled(true); // ENABLE LATER
 		AxisCamera &camera = AxisCamera::GetInstance("10.8.40.11");
 		DriverStationLCD *ds = DriverStationLCD::GetInstance();
 		Timer *timer = new Timer();
 		
 		while (IsOperatorControl()) // loop forever
 		{
-			//GetWatchdog().Feed();
+			GetWatchdog().Feed();
 			
 			// drive with tank drive
 			leftSpeed = SoftStart(leftSpeed, leftStick->GetY());
@@ -233,9 +235,10 @@ public:
 			ds->PrintfLine(DriverStationLCD::kUser_Line1, "x pos: %.2f", newPosition);
 			//ds->PrintfLine(DriverStationLCD::kUser_Line2, "shooter speed: %.2f", shooterSpeed);
 			ds->PrintfLine(DriverStationLCD::kUser_Line2, "target width: %.2f", targetWidth);
-			ds->PrintfLine(DriverStationLCD::kUser_Line3, "balls: %d", ballCounter);
+			ds->PrintfLine(DriverStationLCD::kUser_Line3, "gyro angle: %.2f", elevationAngle);
 			ds->PrintfLine(DriverStationLCD::kUser_Line4, "target distance: %.2f", targetDistance);
 			ds->PrintfLine(DriverStationLCD::kUser_Line5, "vision time: %.5f", timer->Get());
+			ds->PrintfLine(DriverStationLCD::kUser_Line6, "balls: %d", ballCounter);
 			ds->UpdateLCD();
 			
 			Wait(0.001);				// wait for a motor update time
