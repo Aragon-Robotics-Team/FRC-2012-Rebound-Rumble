@@ -8,58 +8,61 @@
  * a number of parameters including height, width, position, and distance.
  */
 
-// Constants for thresholding image to get light from red ringlight
-#define HUE_MIN 0
+// Configure constants for thresholding image to get light from red LED
+#define HUE_MIN 200
 #define HUE_MAX 255
 #define SAT_MIN 0
 #define SAT_MAX 255
-#define LUM_MIN 200
+#define LUM_MIN 150
 #define LUM_MAX 255
 #define EROSION_ITERATIONS 3
 
+// Returns target with greatest score for sorting
 bool compareTargets(Target t1, Target t2)
 {
-	return (t1.m_areaScore < t2.m_areaScore);
+  double t1Score = (t1.m_areaScore + t1.m_yPos) / 2;
+  double t2Score = (t2.m_areaScore + t2.m_yPos) / 2;
+	return (t1Score < t2Score);
 }
 
 // Returns the topmost target found in camera vision
 Target Target::FindRectangularTarget(HSLImage *image)
 {
 	// set threshold based on hue, saturation, luminance
-	BinaryImage *image_proc1 = image->ThresholdHSL(HUE_MIN, HUE_MAX, SAT_MIN, SAT_MAX, LUM_MIN, LUM_MAX);
-	Image *image_proc2 = imaqCreateImage(IMAQ_IMAGE_U8, 3);
+	BinaryImage *binaryImage = image->ThresholdHSL(HUE_MIN, HUE_MAX, SAT_MIN, SAT_MAX, LUM_MIN, LUM_MAX);
+	Image *processedImage = binaryImage->GetImaqImage();
 	// fill rectangles with convex hull function
-	imaqConvexHull(image_proc2, image_proc1->GetImaqImage(), true);
-	Image *image_proc3 = imaqCreateImage(IMAQ_IMAGE_U8, 3);
+	imaqConvexHull(processedImage, processedImage, true);
 	// remove small particles
-	imaqSizeFilter(image_proc3, image_proc2, true, EROSION_ITERATIONS, IMAQ_KEEP_LARGE, NULL);
+	imaqSizeFilter(processedImage, processedImage, true, EROSION_ITERATIONS, IMAQ_KEEP_LARGE, NULL);
 	
-	int particles;
-	frcCountParticles(image_proc3, &particles);
+	int particleCount;
+	frcCountParticles(processedImage, &particleCount);
 	
 	vector<Target> sortedTargets;
 	
 	// Fill target vector based on particles
-	for (int i = 0; i < particles; i++)
+	for (int i = 0; i < particleCount; i++)
 	{
 		ParticleAnalysisReport report;
-		frcParticleAnalysis(image_proc3, i, &report);
+		frcParticleAnalysis(processedImage, i, &report);
 		Target target;
 		target.m_xPos = report.center_mass_x_normalized;
-		target.m_width = report.boundingRect.width;
-		target.m_areaScore = report.particleArea / (report.boundingRect.width * report.boundingRect.height);
+		target.m_yPos = report.center_mass_y_normalized;
+		target.m_width = report.boundingRect.width / 2;
+		target.m_height = report.boundingRect.height / 2;
+		target.m_areaScore = report.particleArea / (target.m_width * target.m_height);
 		
-		// add to vector if rectangular enough
-		if (target.m_areaScore > 0.5 && target.m_areaScore < 2.0)
+		// add to vector if area score is reasonable (resembles rectangle)
+		if (target.m_width > 30 && target.m_height > 30 && target.m_areaScore > 0.6)
 			sortedTargets.push_back(target);
 	}
 	
 	// delete binary and imaq images
-	delete image_proc1;
-	imaqDispose(image_proc2);
-	imaqDispose(image_proc3);
+	delete binaryImage;
+	imaqDispose(processedImage);
 	
-	// sort targets based on area score
+	// sort targets based on score from area and y-coordinate
 	sort(sortedTargets.begin(), sortedTargets.end(), compareTargets);
 	
 	if (sortedTargets.size() > 0)

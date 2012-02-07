@@ -17,6 +17,7 @@ class RobotDemo : public SimpleRobot
 	Joystick *leftStick, *rightStick; // joysticks
 	KinectStick *leftArm, *rightArm; // left and right arm for Kinect
 	Victor *conveyorMotor; // ball-collecting conveyor
+	Victor *rollerMotor; // midpoint roller that prevents shooting
 	Jaguar *turretMotor; // Window motor that powers Lazy Susan
 	Jaguar *shooterMotor; // shooter wheels
 	Victor *leverMotor; // lever motor
@@ -33,6 +34,7 @@ class RobotDemo : public SimpleRobot
 	float shooterSpeed; // speed of shooterMotor
 	float elevationAngle; // angle of robot from ground
 	int ballCounter; // number of balls in possession
+	bool balancing; // if autonomous bridge balance enabled
 
 public:
 	RobotDemo(void)
@@ -46,9 +48,10 @@ public:
 		
 		// Initialize motors
 		//conveyorMotor = new Victor(1); // change slot
+		//rollerMotor = new Victor(2); // change slot
 		//turretMotor = new Jaguar(1); // change slot
 		//shooterMotor = new Jaguar(2); // change slot
-		//leverMotor = new Victor(2); // change slot
+		//leverMotor = new Victor(3); // change slot
 		
 		// Initialize sensors and PID Controller
 		//counterSwitch = new DigitalInput(1); // change slot
@@ -62,12 +65,14 @@ public:
 		//turretControl->Enable();
 		
 		ballCounter = 0;
+		balancing = false;
 		
 		// Initialize camera
 		AxisCamera &camera = AxisCamera::GetInstance("10.8.40.11");
 		camera.WriteResolution(AxisCamera::kResolution_320x240);
 		camera.WriteCompression(30);
-		camera.WriteBrightness(0);
+		camera.WriteBrightness(30);
+		Wait(3.0);
 		
 		GetWatchdog().SetExpiration(100);
 	}
@@ -98,9 +103,9 @@ public:
 			ballCounter++;
 		
 		// Turn on conveyor if less than 3 balls in possession
-		if (ballCounter < BALL_LIMIT)
+		if (ballCounter < BALL_LIMIT && conveyorMotor->Get() < 1.0)
 			conveyorMotor->Set(1.0);
-		else
+		else if (conveyorMotor->Get() > 0.0)
 			conveyorMotor->Set(0.0);
 	}
 	
@@ -145,7 +150,7 @@ public:
 	// fire shooter
 	void launch()
 	{
-		// fire stuff
+		// reverse midpoint roller
 		ballCounter--;
 	}
 	
@@ -180,7 +185,7 @@ public:
 	 */
 	void OperatorControl(void)
 	{
-		GetWatchdog().SetEnabled(true); // ENABLE LATER
+		GetWatchdog().SetEnabled(true);
 		AxisCamera &camera = AxisCamera::GetInstance("10.8.40.11");
 		DriverStationLCD *ds = DriverStationLCD::GetInstance();
 		Timer *timer = new Timer();
@@ -189,10 +194,16 @@ public:
 		{
 			GetWatchdog().Feed();
 			
-			// drive with tank drive
-			leftSpeed = SoftStart(leftSpeed, leftStick->GetY());
-			rightSpeed = SoftStart(rightSpeed, rightStick->GetY());
-			drive->TankDrive(leftSpeed, rightSpeed);
+			if (balancing) // autonomous bridge balancing
+			{
+				// PD output to drive
+			}
+			else // drive with tank drive
+			{
+				leftSpeed = SoftStart(leftSpeed, leftStick->GetY());
+				rightSpeed = SoftStart(rightSpeed, rightStick->GetY());
+				drive->TankDrive(leftSpeed, rightSpeed);
+			}
 			
 			//updateConveyor();
 			
@@ -233,9 +244,9 @@ public:
 			// print LCD messages
 			//ds->PrintfLine(DriverStationLCD::kUser_Line1, "turret angle: %.2f", turretAngle);
 			ds->PrintfLine(DriverStationLCD::kUser_Line1, "x pos: %.2f", newPosition);
-			//ds->PrintfLine(DriverStationLCD::kUser_Line2, "shooter speed: %.2f", shooterSpeed);
-			ds->PrintfLine(DriverStationLCD::kUser_Line2, "target width: %.2f", targetWidth);
-			ds->PrintfLine(DriverStationLCD::kUser_Line3, "gyro angle: %.2f", elevationAngle);
+			ds->PrintfLine(DriverStationLCD::kUser_Line2, "shooter speed: %.2f", shooterSpeed);
+			ds->PrintfLine(DriverStationLCD::kUser_Line3, "target width: %.2f", targetWidth);
+			//ds->PrintfLine(DriverStationLCD::kUser_Line3, "gyro angle: %.2f", elevationAngle);
 			ds->PrintfLine(DriverStationLCD::kUser_Line4, "target distance: %.2f", targetDistance);
 			ds->PrintfLine(DriverStationLCD::kUser_Line5, "vision time: %.5f", timer->Get());
 			ds->PrintfLine(DriverStationLCD::kUser_Line6, "balls: %d", ballCounter);
