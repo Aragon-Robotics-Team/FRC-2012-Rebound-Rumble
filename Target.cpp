@@ -49,8 +49,8 @@ Target Target::FindRectangularTarget(HSLImage *image)
 		Target target;
 		target.m_xPos = report.center_mass_x_normalized;
 		target.m_yPos = report.center_mass_y_normalized;
-		target.m_width = report.boundingRect.width / 2;
-		target.m_height = report.boundingRect.height / 2;
+		target.m_width = report.boundingRect.width;
+		target.m_height = report.boundingRect.height;
 		target.m_areaScore = report.particleArea / (target.m_width * target.m_height);
 		
 		// add to vector if area score is reasonable (resembles rectangle)
