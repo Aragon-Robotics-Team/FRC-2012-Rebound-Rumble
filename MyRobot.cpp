@@ -1,6 +1,7 @@
 #include "WPILib.h"
 #include "Target.h"
 #include "CamPIDSource.h"
+#include "KinectGestures.h"
 #include <AnalogChannel.h>
 #include <math.h>
 
@@ -15,6 +16,7 @@ class RobotDemo : public SimpleRobot
 {
 	RobotDrive *drive; // robot drive system
 	Joystick *leftStick, *rightStick; // joysticks
+	Kinect *kinect; // Kinect
 	KinectStick *leftArm, *rightArm; // left and right arm for Kinect
 	Victor *conveyorMotor; // ball-collecting conveyor
 	Victor *rollerMotor; // midpoint roller that prevents shooting
@@ -58,13 +60,13 @@ public:
 		//rollerMotor = new Victor(2); // change slot
 		//turretMotor = new Jaguar(1); // change slot
 		//shooterMotor = new Jaguar(2); // change slot
-		leverMotor = new Jaguar(1,3); // change slot
+		leverMotor = new Jaguar(1,5); // change slot
 		
 		// Initialize sensors and PID Controller
 		counterSwitch = new DigitalInput(1); // change slot
 		//gyro = new Gyro(1); // change slot
 		//gyro->SetSensitivity(0.01);
-		//turretPot = new AnalogChannel(1); // change slot
+		turretPot = new AnalogChannel(1); // change slot
 		//leverPot = new AnalogChannel(2); // change slot
 		
 		//cameraSource = new CamPIDSource();
@@ -105,6 +107,12 @@ public:
 		return result;
 	}
 	
+	// returns angle from potentiometer reading
+	float voltageToAngle(float voltage)
+	{
+		return 0;
+	}
+	
 	// updates conveyor motor based on number of balls in possession
 	void updateConveyor()
 	{
@@ -133,7 +141,6 @@ public:
 		const float MAX_ANGLE = 90.0;
 		
 		leverMotor->Set(speed);
-		
 		/*if (targetAngle > leverAngle && targetAngle < MAX_ANGLE)
 			leverMotor->Set(0.5);
 		else if (targetAngle < leverAngle && targetAngle > MIN_ANGLE)
@@ -153,9 +160,9 @@ public:
 	void rotateTurret(float position)
 	{
 		// set limit based on turret angle
-		turretAngle = turretPot->GetVoltage();
-		if (turretAngle <= 0 || turretAngle >= 512) // adjust bounds
-			position = 0.0;
+		//turretAngle = turretPot->GetVoltage();
+		//if (turretAngle <= 0 || turretAngle >= 512) // adjust bounds
+		//	position = 0.0;
 		
 		cameraSource->SetSource(position);
 		turretControl->SetSetpoint(0);
@@ -177,7 +184,7 @@ public:
 	// fire shooter
 	/*void launch()
 	{
-		// reverse midpoint roller
+		// power midpoint roller to get ball from conveyor
 		if (ballCounter > 0 && rollerMotor->Get() < 1.0 && launchTimer->Get() == 0.0)
 		{
 			//rollerMotor->Set(0.5);
@@ -193,13 +200,14 @@ public:
 	{
 		GetWatchdog().SetEnabled(false);
 		AxisCamera &camera = AxisCamera::GetInstance("10.8.40.11");
+		kinect = Kinect::GetInstance();
 		
 		/*A loop is necessary to retrieve the latest Kinect data and update the motors */
 		while(IsAutonomous())
 		{
 			leftSpeed = SoftStart(leftSpeed, leftArm->GetY()*.7);
 			rightSpeed = SoftStart(rightSpeed, rightArm->GetY()*.7);
-			drive->TankDrive(leftSpeed, rightSpeed);
+			//drive->TankDrive(leftSpeed, rightSpeed);
 			
 			updateConveyor();
 			
@@ -214,14 +222,23 @@ public:
 					Target target = Target::FindRectangularTarget(image);
 					delete image;
 				
-					newPosition = target.m_xPos;
-					targetWidth = target.m_width;
-					targetDistance = getDistance(targetWidth);
-					
-					// aim and ready shooter
-					//rotateTurret(newPosition);
-					shooterSpeed = adjustShooter(targetDistance);
+					if (target.m_width > 0 && target.m_height > 0)
+					{
+						newPosition = target.m_xPos;
+						targetWidth = target.m_width;
+						targetDistance = getDistance(targetWidth);
+						
+						// aim and ready shooter
+						//rotateTurret(newPosition);
+						shooterSpeed = adjustShooter(targetDistance);
+					}
 				}
+			}
+			
+			// fire ball if Kinect senses head left
+			if (hasGesture(kinect, 1))
+			{
+				//launch();
 			}
 			
 			Wait(.01); // Delay 10ms to reduce processing load
@@ -264,18 +281,18 @@ public:
 			
 			/*if (launchTimer->Get() > 5.0)
 			{
-				rollerMotor->Set(-0.5);
+				rollerMotor->Set(0.0);
 				launchTimer->Reset();
 			}*/
 			
 			// rotate lever if Button 2 pressed
 			//leverAngle = leverPot->GetVoltage();
-			if (leftStick->GetTop())
-				rotateLever(0.5);
-			else if (rightStick->GetTop())
-				rotateLever(-0.5);
+			if (leftStick->GetButton(Joystick::kTopButton))
+				rotateLever(0.5);//leverAngle + 5);
+			else if (rightStick->GetButton(Joystick::kTopButton))
+				rotateLever(-0.5);//leverAngle - 5);
 			else
-				rotateLever(0);
+				leverMotor->Set(0.0);
 			
 			cameraTimer->Reset();
 			cameraTimer->Start();
@@ -291,20 +308,25 @@ public:
 					Target target = Target::FindRectangularTarget(image);
 					delete image;
 					
-					newPosition = target.m_xPos;
-					targetWidth = target.m_width;
-					targetDistance = getDistance(targetWidth);
-					
-					// aim and ready shooter
-					//rotateTurret(newPosition);
-					shooterSpeed = adjustShooter(targetDistance);
+					if (target.m_width > 0 && target.m_height > 0)
+					{
+						newPosition = target.m_xPos;
+						targetWidth = target.m_width;
+						targetDistance = getDistance(targetWidth);
+						
+						// aim and ready shooter
+						//rotateTurret(newPosition);
+						shooterSpeed = adjustShooter(targetDistance);
+					}
 				}
 			}
 			cameraTimer->Stop();
 			
+			turretAngle = turretPot->GetValue(); // for testing
+			
 			// print LCD messages
-			//ds->PrintfLine(DriverStationLCD::kUser_Line1, "turret angle: %.2f", turretAngle);
-			ds->PrintfLine(DriverStationLCD::kUser_Line1, "x pos: %.2f", newPosition);
+			ds->PrintfLine(DriverStationLCD::kUser_Line1, "turret pot: %.2f", turretAngle);
+			//ds->PrintfLine(DriverStationLCD::kUser_Line1, "x pos: %.2f", newPosition);
 			ds->PrintfLine(DriverStationLCD::kUser_Line2, "target distance: %.2f", targetDistance);
 			ds->PrintfLine(DriverStationLCD::kUser_Line3, "shooter speed: %.2f", shooterSpeed);
 			//ds->PrintfLine(DriverStationLCD::kUser_Line4, "gyro angle: %.2f", elevationAngle);
