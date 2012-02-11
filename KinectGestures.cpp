@@ -48,7 +48,7 @@ double AngleXY(Skeleton::Joint origin, Skeleton::Joint measured, UINT8 mirrored)
  */
 double AngleYZ(Skeleton::Joint origin, Skeleton::Joint measured, UINT8 mirrored)
 {
-    return (atan2((measured.y - origin.y), (mirrored) ? (origin.z - measured.z) : (measured.z - origin.z))*180/PI);
+    return (atan2((measured.y - origin.y), (mirrored) ? (origin.z - measured.z) : (measured.z - origin.z))*180/M_PI);
 }
 
 /**
@@ -92,6 +92,8 @@ double CoerceToRange(double input, double inputMin, double inputMax, double outp
 // Check if advanced gesture is active
 bool hasGesture(Kinect *kinect, int gesture)
 {
+	double leftAxis, rightAxis;
+	double leftAngle, rightAngle, headAngle, rightLegAngle, leftLegAngle, rightLegYZ, leftLegYZ = 0;
     bool dataWithinExpectedRange;
     
     /* Only process data if skeleton is tracked */
