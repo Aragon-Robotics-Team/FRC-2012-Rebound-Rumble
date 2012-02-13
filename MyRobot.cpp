@@ -23,16 +23,18 @@ class RobotDemo : public SimpleRobot
 	Jaguar *conveyorMotor; // ball-collecting conveyor
 	//Victor *rollerMotor; // midpoint roller that prevents shooting
 	//Jaguar *turretMotor; // Window motor that powers Lazy Susan
-	//Jaguar *shooterMotor; // shooter wheels
+	Jaguar *shooterMotor1; // shooter wheel 1
+	Jaguar *shooterMotor2; // shooter wheel 2
 	
 	DigitalInput *counterSwitch; // rotary switch that detects balls in conveyor
 	//Gyro *gyro; // gyro for measuring elevationAngle
 	AnalogChannel *turretPot; // potentiometer for measuring turretAngle
 	AnalogChannel *leverPot; // potentiometer for measuring leverAngle
 	
-	//CamPIDSource *cameraSource; // PID Source for camera
-	//PIDController *turretControl; // PID controller for centering target in camera's field
+	CamPIDSource *cameraSource; // PID Source for camera
+	PIDController *turretControl; // PID controller for centering target in camera's field
 	//PIDController *balanceControl; // PID controller for balancing on bridge with gyro
+	Timer *switchTimer; // timer that measures time between counting balls
 	Timer *launchTimer; // timer that measures time between firing balls
 	
 	float leftSpeed, rightSpeed;
@@ -45,24 +47,27 @@ class RobotDemo : public SimpleRobot
 	float elevationAngle; // angle of robot from ground
 	int ballCounter; // number of balls in possession
 	bool switchPressed; // if limit switch (ballCounter) is pressed
+	bool autoAiming; // if camera autonomously aims turret
+	bool launching; // if firing ball
 	bool balancing; // if autonomous bridge balance enabled
 
 public:
 	RobotDemo(void)
 	{
 		// Initialize drivetrain, Kinect, and joysticks
-		drive = new RobotDrive(1, 2);
+		//drive = new RobotDrive(1, 2);
 		leftStick = new Joystick(1);
 		rightStick = new Joystick(2);
 		leftArm = new KinectStick(1);
 		rightArm = new KinectStick(2);
 		
 		// Initialize motors
-		leverMotor = new Jaguar(5);
-		conveyorMotor = new Jaguar(6);
-		//rollerMotor = new Victor(2); // change slot
-		//turretMotor = new Jaguar(1); // change slot
-		//shooterMotor = new Jaguar(2); // change slot
+		//leverMotor = new Jaguar(5);
+		conveyorMotor = new Jaguar(4);
+		//rollerMotor = new Jaguar(2); // change slot
+		//turretMotor = new Jaguar(5);
+		shooterMotor1 = new Jaguar(6);
+		shooterMotor2 = new Jaguar(7);
 		
 		// Initialize sensors and PID Controller
 		counterSwitch = new DigitalInput(1);
@@ -72,22 +77,25 @@ public:
 		turretPot = new AnalogChannel(2);
 		leverPot = new AnalogChannel(3);
 		
-		//cameraSource = new CamPIDSource();
-		//turretControl = new PIDController(0.2, 0.002, 0.0, cameraSource, turretMotor);
+		cameraSource = new CamPIDSource();
+		//turretControl = new PIDController(0.3, 0.000, 0.0, cameraSource, turretMotor);
 		//turretControl->SetOutputRange(-0.8, 0.8);
 		//turretControl->Enable();
 		//balanceControl = new PIDController(0.1, 0.0, 0.1, gyro, drive);
 		//balanceControl->Disable();
-		//launchTimer = new Timer();
+		switchTimer = new Timer();
+		launchTimer = new Timer();
 		
 		ballCounter = 0;
+		autoAiming = false;
+		launching = false;
 		balancing = false;
 		
 		// Initialize camera
-		//AxisCamera &camera = AxisCamera::GetInstance("10.8.40.11");
-		//camera.WriteResolution(AxisCamera::kResolution_320x240);
-		//camera.WriteCompression(30);
-		//camera.WriteBrightness(30);
+		AxisCamera &camera = AxisCamera::GetInstance("10.8.40.11");
+		camera.WriteResolution(AxisCamera::kResolution_320x240);
+		camera.WriteCompression(30);
+		camera.WriteBrightness(30);
 		Wait(3.0);
 
 		GetWatchdog().SetExpiration(300);
@@ -111,7 +119,7 @@ public:
 	}
 	
 	// updates conveyor motor based on number of balls in possession
-	void updateConveyor()
+	void updateConveyor(Timer *timer)
 	{
 		const int BALL_LIMIT = 3; // max balls in possession
 		
@@ -119,14 +127,17 @@ public:
 		{
 			ballCounter++;
 			switchPressed = true;
+			timer->Start();
 		}
-		else if (switchPressed && !counterSwitch->Get())
+		else if (switchPressed && !counterSwitch->Get() && timer->Get() > 3.0)
 		{
 			switchPressed = false;
+			timer->Reset();
 		}
 		
-		// Turn on conveyor if less than 3 balls in possession
-		if (ballCounter < BALL_LIMIT && conveyorMotor->Get() < 1.0)
+		// Turn on conveyor if less than 3 balls in possession or shooting
+		//if ((ballCounter < BALL_LIMIT || launching) && conveyorMotor->Get() < 1.0)
+		if (leftStick->GetTrigger(Joystick::kLeftHand))
 			conveyorMotor->Set(1.0);
 		else if (conveyorMotor->Get() > 0.0)
 			conveyorMotor->Set(0.0);
@@ -159,14 +170,17 @@ public:
 	void rotateTurret(float position)
 	{
 		// set limit based on turret angle
-		const float MIN_ANGLE = 0;
-		const float MAX_ANGLE = 180;
+		const float MIN_ANGLE = 245;
+		const float MAX_ANGLE = 490;
 		
-		/*turretAngle = turretPot->GetValue();
-		if (turretAngle < MIN_ANGLE + 20 && position < 0.0)
-			position /= (turretAngle - MIN_ANGLE);
-		else if (turretAngle > MAX_ANGLE - 20 && position > 0.0)
-			position /= (MAX_ANGLE - turretAngle);*/
+		turretAngle = turretPot->GetValue();
+		if ((turretAngle <= MIN_ANGLE && position < 0.0) || (turretAngle >= MAX_ANGLE && position > 0.0))
+			position = 0.0;
+		
+		/*if (turretAngle < MIN_ANGLE + 20 && position > 0.0)
+			position /= 20 / (turretAngle - MIN_ANGLE);
+		else if (turretAngle > MAX_ANGLE - 20 && position < 0.0)
+			position /= 20 / (MAX_ANGLE - turretAngle);*/
 		
 		//if (fabs(position) < 0.1)
 		//	position = 0.0;
@@ -176,15 +190,28 @@ public:
 	}
 	
 	// adjusts speed of shooter motor based on distance from target; returns speed
-	float adjustShooter(float distance)
+	float adjustShooter(float distance, bool override = false)
 	{
-		// adjust shooter RPM based on distance and constant ratio
-		float power = sqrt(distance * 26688.017) / 15000;
-		if (power > 1.0)
-			power = 1.0;
-		else if (power < -1.0)
-			power = -1.0;
-		//shooterMotor->Set(power);
+		float power;
+		
+		// if joystick override
+		if (override)
+			power = distance;
+		else
+		{
+			// adjust shooter RPM based on distance and constant ratio
+			float power = sqrt(distance * 26688.017) / 15000;
+			if (power > 1.0)
+				power = 1.0;
+			else if (power < -1.0)
+				power = -1.0;
+		}
+		
+		if (ballCounter > 0 || override)
+		{
+			shooterMotor1->Set(power);
+			shooterMotor2->Set(power);
+		}
 		return power;
 	}
 	
@@ -195,6 +222,7 @@ public:
 		if (ballCounter > 0 && rollerMotor->Get() < 1.0 && launchTimer->Get() == 0.0)
 		{
 			//rollerMotor->Set(0.5);
+			launching = true;
 			launchTimer->Start();
 			ballCounter--;
 		}
@@ -206,7 +234,7 @@ public:
 	void Autonomous(void)
 	{
 		GetWatchdog().SetEnabled(false);
-		//AxisCamera &camera = AxisCamera::GetInstance("10.8.40.11");
+		AxisCamera &camera = AxisCamera::GetInstance("10.8.40.11");
 		//kinect = Kinect::GetInstance();
 		
 		/*A loop is necessary to retrieve the latest Kinect data and update the motors */
@@ -214,11 +242,11 @@ public:
 		{
 			leftSpeed = SoftStart(leftSpeed, leftArm->GetY()*.7);
 			rightSpeed = SoftStart(rightSpeed, rightArm->GetY()*.7);
-			drive->TankDrive(leftSpeed, rightSpeed);
+			//drive->TankDrive(leftSpeed, rightSpeed);
 			
-			updateConveyor();
+			updateConveyor(switchTimer);
 			
-			/*if (camera.IsFreshImage())
+			if (camera.IsFreshImage())
 			{
 				HSLImage *image = camera.GetImage();
 				
@@ -236,11 +264,11 @@ public:
 						targetDistance = getDistance(targetWidth);
 						
 						// aim and ready shooter
-						//rotateTurret(newPosition);
+						rotateTurret(newPosition);
 						shooterSpeed = adjustShooter(targetDistance);
 					}
 				}
-			}*/
+			}
 			
 			// fire ball if Kinect senses head left
 			//if (hasGesture(kinect, 1))
@@ -258,7 +286,7 @@ public:
 	void OperatorControl(void)
 	{
 		GetWatchdog().SetEnabled(true);
-		//AxisCamera &camera = AxisCamera::GetInstance("10.8.40.11");
+		AxisCamera &camera = AxisCamera::GetInstance("10.8.40.11");
 		DriverStationLCD *ds = DriverStationLCD::GetInstance();
 		Timer *cameraTimer = new Timer();
 		
@@ -277,33 +305,36 @@ public:
 			{
 				leftSpeed = SoftStart(leftSpeed, leftStick->GetY());
 				rightSpeed = SoftStart(rightSpeed, rightStick->GetY());
-				drive->TankDrive(leftSpeed, rightSpeed);
+				//drive->TankDrive(leftSpeed, rightSpeed);
 			}
 			
-			updateConveyor();
+			updateConveyor(switchTimer);
 			
 			// shoot if both triggers pressed
-			//if (leftStick->GetTrigger(1) && rightStick->GetTrigger(1))
+			//if (launching == false && leftStick->GetTrigger(1) && rightStick->GetTrigger(1))
 				//launch();
 			
-			/*if (launchTimer->Get() > 5.0)
+			/*if (launching && launchTimer->Get() > 5.0)
 			{
 				rollerMotor->Set(0.0);
 				launchTimer->Reset();
+				launching = false;
 			}*/
 			
 			// rotate lever if Button 2 pressed
-			if (leftStick->GetButton(Joystick::kTopButton))
+			/*if (leftStick->GetButton(Joystick::kTopButton))
 				rotateLever(1.0);//leverAngle + 5);
 			else if (rightStick->GetButton(Joystick::kTopButton))
 				rotateLever(-1.0);//leverAngle - 5);
 			else
-				leverMotor->Set(0.0);
+				leverMotor->Set(0.0);*/
 			
 			cameraTimer->Reset();
 			cameraTimer->Start();
 			
-			/*if (camera.IsFreshImage())
+			autoAiming = leftStick->GetButton(Joystick::kTopButton);
+			
+			if (camera.IsFreshImage())
 			{
 				HSLImage *image = camera.GetImage();
 				
@@ -321,20 +352,29 @@ public:
 						targetDistance = getDistance(targetWidth);
 						
 						// aim and ready shooter
-						//rotateTurret(newPosition);
-						shooterSpeed = adjustShooter(targetDistance);
+						if (autoAiming)
+						{
+							rotateTurret(newPosition);
+							shooterSpeed = adjustShooter(targetDistance);
+						}
+						else
+						{
+							rotateTurret(leftStick->GetX());
+							shooterSpeed = adjustShooter(leftStick->GetY(), true);
+						}
+						
 					}
 				}
-			}*/
+			}
 			cameraTimer->Stop();
 			
 			// print LCD messages
-			ds->PrintfLine(DriverStationLCD::kUser_Line1, "turret angle: %.2f", turretAngle);
-			//ds->PrintfLine(DriverStationLCD::kUser_Line1, "x pos: %.2f", newPosition);
+			ds->PrintfLine(DriverStationLCD::kUser_Line1, "x pos: %.2f", newPosition);
 			ds->PrintfLine(DriverStationLCD::kUser_Line2, "target distance: %.2f", targetDistance);
 			ds->PrintfLine(DriverStationLCD::kUser_Line3, "shooter speed: %.2f", shooterSpeed);
 			//ds->PrintfLine(DriverStationLCD::kUser_Line4, "gyro angle: %.2f", elevationAngle);
-			ds->PrintfLine(DriverStationLCD::kUser_Line4, "lever angle: %.2f", leverAngle);
+			//ds->PrintfLine(DriverStationLCD::kUser_Line4, "lever angle: %.2f", leverAngle);
+			ds->PrintfLine(DriverStationLCD::kUser_Line4, "turret angle: %.2f", turretAngle);
 			ds->PrintfLine(DriverStationLCD::kUser_Line5, "vision time: %.5f", cameraTimer->Get());
 			ds->PrintfLine(DriverStationLCD::kUser_Line6, "balls: %d", ballCounter);
 			ds->UpdateLCD();

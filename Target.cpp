@@ -9,7 +9,7 @@
  */
 
 // Configure constants for thresholding image to get light from red LED
-#define HUE_MIN 200
+#define HUE_MIN 100
 #define HUE_MAX 255
 #define SAT_MIN 0
 #define SAT_MAX 255
