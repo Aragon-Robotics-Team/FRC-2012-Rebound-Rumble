@@ -2,6 +2,7 @@
 #define _TARGET_H
 
 #include <vector>
+#include <string>
 #include "Vision/HSLImage.h"
 
 class Target
@@ -13,7 +14,13 @@ public:
 	double m_height;
 	double m_areaScore;
 	
-    static Target FindRectangularTarget(HSLImage *image);
+	typedef enum {
+		kTopTarget, kLeftTarget, kRightTarget, kBottomTarget
+	} TargetType;
+	
+	static char* TargetToString(TargetType);
+	
+    static Target FindRectangularTarget(HSLImage *image, TargetType targetType);
     
 };
 

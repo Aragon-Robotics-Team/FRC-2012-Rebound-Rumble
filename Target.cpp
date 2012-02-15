@@ -9,7 +9,7 @@
  */
 
 // Configure constants for thresholding image to get light from red LED
-#define HUE_MIN 100
+#define HUE_MIN 200
 #define HUE_MAX 255
 #define SAT_MIN 0
 #define SAT_MAX 255
@@ -18,15 +18,50 @@
 #define EROSION_ITERATIONS 3
 
 // Returns target with greatest score for sorting
-bool compareTargets(Target t1, Target t2)
+bool compareTargetTop(Target t1, Target t2)
 {
   double t1Score = (t1.m_areaScore + t1.m_yPos) / 2;
   double t2Score = (t2.m_areaScore + t2.m_yPos) / 2;
 	return (t1Score < t2Score);
 }
+bool compareTargetLeft(Target t1, Target t2)
+{
+  double t1Score = (t1.m_areaScore - t1.m_xPos) / 2;
+  double t2Score = (t2.m_areaScore - t2.m_xPos) / 2;
+	return (t1Score < t2Score);
+}
+bool compareTargetRight(Target t1, Target t2)
+{
+  double t1Score = (t1.m_areaScore + t1.m_xPos) / 2;
+  double t2Score = (t2.m_areaScore + t2.m_xPos) / 2;
+	return (t1Score < t2Score);
+}
+bool compareTargetBottom(Target t1, Target t2)
+{
+  double t1Score = (t1.m_areaScore - t1.m_yPos) / 2;
+  double t2Score = (t2.m_areaScore - t2.m_yPos) / 2;
+	return (t1Score < t2Score);
+}
+
+char* Target::TargetToString(TargetType targetType)
+{
+	switch (targetType)
+	{
+	case kLeftTarget:
+		return "left";
+	case kRightTarget:
+		return "right";
+	case kTopTarget:
+		return "top";
+	case kBottomTarget:
+		return "bottom";
+	default:
+		return "unknown";
+	}
+}
 
 // Returns the topmost target found in camera vision
-Target Target::FindRectangularTarget(HSLImage *image)
+Target Target::FindRectangularTarget(HSLImage *image, TargetType targetType)
 {
 	// set threshold based on hue, saturation, luminance
 	BinaryImage *binaryImage = image->ThresholdHSL(HUE_MIN, HUE_MAX, SAT_MIN, SAT_MAX, LUM_MIN, LUM_MAX);
@@ -62,12 +97,26 @@ Target Target::FindRectangularTarget(HSLImage *image)
 	delete binaryImage;
 	imaqDispose(processedImage);
 	
-	// sort targets based on score from area and y-coordinate
-	sort(sortedTargets.begin(), sortedTargets.end(), compareTargets);
+	switch (targetType)
+	{
+	case kTopTarget: // sort targets based on score from area and y-coordinate
+		sort(sortedTargets.begin(), sortedTargets.end(), compareTargetTop);
+		break;
+	case kLeftTarget: // sort targets based on score from area and x-coordinate
+		sort(sortedTargets.begin(), sortedTargets.end(), compareTargetLeft);
+		break;
+	case kRightTarget: // sort targets based on score from area and x-coordinate
+		sort(sortedTargets.begin(), sortedTargets.end(), compareTargetRight);
+		break;
+	case kBottomTarget: // sort targets based on score from area and y-coordinate
+		sort(sortedTargets.begin(), sortedTargets.end(), compareTargetBottom);
+		break;
+	}
 	
 	if (sortedTargets.size() > 0)
 		return sortedTargets[0];
 	
 	Target target;
+	target.m_xPos = target.m_yPos = target.m_width = target.m_height = 0;
 	return target;
 }
