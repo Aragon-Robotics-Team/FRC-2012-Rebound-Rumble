@@ -90,7 +90,7 @@ double CoerceToRange(double input, double inputMin, double inputMax, double outp
 }
 
 // Check if advanced gesture is active
-bool hasGesture(Kinect *kinect, int gesture)
+bool GetGesture(int gesture, Kinect *kinect)
 {
 	double leftAxis, rightAxis;
 	double leftAngle, rightAngle, headAngle, rightLegAngle, leftLegAngle, rightLegYZ, leftLegYZ = 0;

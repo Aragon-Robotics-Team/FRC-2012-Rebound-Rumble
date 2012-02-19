@@ -51,8 +51,8 @@ protected:
     static const UINT32 kDPadXAxisNum = 5;
     static const UINT32 kDPadYAxisNum = 6;
     
-    static const unsigned kLeftTriggerButton = 5;
-    static const unsigned kRightTriggerButton = 6;
+    static const unsigned kLeftTriggerButton = 7;
+    static const unsigned kRightTriggerButton = 8;
     static const unsigned kLeftAnalogStickButton = 11;
     static const unsigned kRightAnalogStickButton = 12;
 

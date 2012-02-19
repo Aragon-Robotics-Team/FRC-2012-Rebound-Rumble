@@ -3,6 +3,6 @@
 
 #include <math.h>
 
-bool hasGesture(Kinect *kinect, int gesture);
+bool GetGesture(int gesture, Kinect *kinect);
 
 #endif
