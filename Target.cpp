@@ -9,7 +9,7 @@
  */
 
 // Configure constants for thresholding image to get light from red LED
-#define HUE_MIN 200
+#define HUE_MIN 50
 #define HUE_MAX 255
 #define SAT_MIN 0
 #define SAT_MAX 255
@@ -20,26 +20,26 @@
 // Returns target with greatest score for sorting
 bool compareTargetTop(Target t1, Target t2)
 {
-  double t1Score = (t1.m_areaScore + t1.m_yPos) / 2;
-  double t2Score = (t2.m_areaScore + t2.m_yPos) / 2;
+	double t1Score = (t1.m_areaScore + t1.m_yPos) / 2;
+	double t2Score = (t2.m_areaScore + t2.m_yPos) / 2;
 	return (t1Score < t2Score);
 }
 bool compareTargetLeft(Target t1, Target t2)
 {
-  double t1Score = (t1.m_areaScore - t1.m_xPos) / 2;
-  double t2Score = (t2.m_areaScore - t2.m_xPos) / 2;
+	double t1Score = (t1.m_areaScore - t1.m_xPos) / 2;
+	double t2Score = (t2.m_areaScore - t2.m_xPos) / 2;
 	return (t1Score < t2Score);
 }
 bool compareTargetRight(Target t1, Target t2)
 {
-  double t1Score = (t1.m_areaScore + t1.m_xPos) / 2;
-  double t2Score = (t2.m_areaScore + t2.m_xPos) / 2;
+	double t1Score = (t1.m_areaScore + t1.m_xPos) / 2;
+	double t2Score = (t2.m_areaScore + t2.m_xPos) / 2;
 	return (t1Score < t2Score);
 }
 bool compareTargetBottom(Target t1, Target t2)
 {
-  double t1Score = (t1.m_areaScore - t1.m_yPos) / 2;
-  double t2Score = (t2.m_areaScore - t2.m_yPos) / 2;
+	double t1Score = (t1.m_areaScore - t1.m_yPos) / 2;
+	double t2Score = (t2.m_areaScore - t2.m_yPos) / 2;
 	return (t1Score < t2Score);
 }
 
@@ -89,7 +89,7 @@ Target Target::FindRectangularTarget(HSLImage *image, TargetType targetType)
 		target.m_areaScore = report.particleArea / (target.m_width * target.m_height);
 		
 		// add to vector if area score is reasonable (resembles rectangle)
-		if (target.m_width > 30 && target.m_height > 30 && target.m_areaScore > 0.6)
+		if (target.m_width > 30 && target.m_height > 30 && target.m_areaScore > 0.60)
 			sortedTargets.push_back(target);
 	}
 	

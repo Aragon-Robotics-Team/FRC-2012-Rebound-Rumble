@@ -1,13 +1,12 @@
 #include "WPILib.h"
 #include "Gamepad.h"
 #include "Target.h"
-#include "CamPIDSource.h"
 #include "KinectGestures.h"
 #include <AnalogChannel.h>
 #include <math.h>
 
 #define M_PI 3.14159 // value of pi
-#define THETA 13.5 // value of camera angle (half of FOV)
+#define THETA 20.5 // value of camera angle (half of FOV)
 
 #define AUTO_WAIT_TIME 5.0 // configure before each match for autonomous
 #define AUTO_BALL_COUNT 2 // number of balls in possession at start of hybrid
@@ -36,18 +35,14 @@ class RobotDemo : public SimpleRobot
 	
 	Victor *conveyorMotor; // ball-collecting conveyor
 	Jaguar *shooterMotors; // shooter wheels
-	Victor *leverMotor; // lever motor
 	Victor *turretMotor; // Window motor that powers Lazy Susan
+	Victor *leverMotor; // lever motor
 	
 	DigitalInput *entranceSwitch; // rotary switch that detects balls in conveyor
 	DigitalInput *exitSwitch; // limit switch that detects balls exiting shooter
 	AnalogChannel *turretPot; // potentiometer for measuring turretAngle
 	AnalogChannel *leverPot; // potentiometer for measuring leverAngle
-	//Gyro *gyro; // gyro for measuring elevationAngle
 	
-	//CamPIDSource *cameraSource; // PID Source for camera
-	//PIDController *turretControl; // PID controller for centering target in camera's field
-	//PIDController *balanceControl; // PID controller for balancing on bridge with gyro
 	Timer *switchTimer1; // timer that measures time between counting incoming balls
 	Timer *switchTimer2; // timer that measures time between counting exiting balls
 	Timer *autoTimer; // timer for autonomous wait time
@@ -84,28 +79,20 @@ public:
 		// Initialize motors (Ports 6 & 8 = DEAD?)
 		conveyorMotor = new Victor(5); // reversed
 		shooterMotors = new Jaguar(7);
-		leverMotor = new Victor(10);
 		turretMotor = new Victor(8);
+		leverMotor = new Victor(10);
 		
-		// Initialize sensors and PID Controller
+		// Initialize sensors and timers
 		entranceSwitch = new DigitalInput(1);
 		exitSwitch = new DigitalInput(2);
 		turretPot = new AnalogChannel(2);
 		leverPot = new AnalogChannel(3);
-		//gyro = new Gyro(1); // change slot
-		//gyro->Reset();
-		//gyro->SetSensitivity(0.01);
 		
-		//cameraSource = new CamPIDSource();
-		//turretControl = new PIDController(0.3, 0.000, 0.0, cameraSource, turretMotor);
-		//turretControl->SetOutputRange(-0.8, 0.8);
-		//turretControl->Enable();
-		//balanceControl = new PIDController(0.1, 0.0, 0.1, gyro, drive);
-		//balanceControl->Disable();
 		switchTimer1 = new Timer();
 		switchTimer2 = new Timer();
 		autoTimer = new Timer();
 		
+		// Initialize variables
 		shooterSpeed = MAX_SPEED;
 		ballCounter = 0;
 		autoAiming = false;
@@ -126,7 +113,7 @@ public:
 	}
 	
 	// limits maximum change in acceleration to protect chains
-	float SoftStart(float current, float target, float limit = 1.0, float max = MAX_SPEED)
+	float SoftStart(float current, float target, float limit = 0.1, float max = MAX_SPEED)
 	{
 		float result = target;
 		float error = current - target;
@@ -176,7 +163,7 @@ public:
 		}
 		
 		// Turn on conveyor if less than 3 balls in possession, unless shooting
-		if (turretPad->GetButton(5)) // || ballCounter == 0
+		if (turretPad->GetButton(5))// || ballCounter == 0)
 			conveyorMotor->Set(-1.0);
 		else if (turretPad->GetLeftTrigger())
 			conveyorMotor->Set(1.0);
@@ -211,13 +198,10 @@ public:
 		if ((turretAngle <= TURRET_MIN && position < 0.0) || (turretAngle >= TURRET_MAX && position > 0.0))
 			position = 0.0;
 		
-		if (fabs(position) <= 0.01)
+		if (fabs(position) <= 0.005)
 			position = 0.0;
 		
-		turretMotor->Set(MAX_SPEED * position);
-		
-		//cameraSource->SetSource(position);
-		//turretControl->SetSetpoint(0);
+		turretMotor->Set(MAX_SPEED * position / 2);
 	}
 	
 	// returns speed of shooter motor based on distance from target
@@ -229,9 +213,9 @@ public:
 		if (override)
 		{
 			if (distance < -0.1)
-				power = shooterSpeed + 0.001;
+				power = shooterSpeed + 0.0001;
 			else if (distance > 0.1)
-				power = shooterSpeed - 0.001;
+				power = shooterSpeed - 0.0001;
 			else
 				power = shooterSpeed;
 		}
@@ -241,10 +225,10 @@ public:
 			switch (targetType)
 			{
 			case Target::kTopTarget:
-				power = 0.2663 * pow(distance, 0.4352); // find equation
+				power = 0.23 + 0.23296 * log(distance); // find equation
 				break;
 			case Target::kLeftTarget: case Target::kRightTarget:
-				power = 0.2663 * pow(distance, 0.4352); // calibrate
+				power = 0.23 + 0.23296 * log(distance);
 				break;
 			case Target::kBottomTarget:
 				power = 0.2663 * pow(distance, 0.4352); // find equation
@@ -309,7 +293,7 @@ public:
 			{
 				leftSpeed = SoftStart(leftSpeed, leftArm->GetY()*.7);
 				rightSpeed = SoftStart(rightSpeed, rightArm->GetY()*.7);
-				//drive->TankDrive(leftSpeed, rightSpeed);
+				drive->TankDrive(leftSpeed, rightSpeed);
 				
 				launching = GetGesture(1, kinect);
 				updateLever(GetGesture(3, kinect), GetGesture(4, kinect));
@@ -328,8 +312,7 @@ public:
 			//updateConveyor(switchTimer1, switchTimer2);
 			updateShooter(shooterSpeed);
 			
-			
-			/*if (camera.IsFreshImage() && !launching)
+			if (camera.IsFreshImage() && !launching)
 			{
 				HSLImage *image = camera.GetImage();
 				
@@ -351,7 +334,7 @@ public:
 						shooterSpeed = getSpeed(targetDistance);
 					}
 				}
-			}*/
+			}
 			
 			Wait(.01); // Delay 10ms to reduce processing load
 		}
@@ -374,13 +357,10 @@ public:
 		while (IsOperatorControl()) // loop forever
 		{			
 			balancing = drivePad->GetButton(2);
-			//elevationAngle = gyro->GetAngle();
 			if (balancing) // autonomous bridge balancing
 			{
 				leftSpeed = SoftStart(leftSpeed, -0.2);
 				rightSpeed = SoftStart(rightSpeed, -0.2);
-				//balanceControl->Enable();
-				//balanceControl->SetSetpoint(0);
 			}
 			else // drive with tank drive
 			{
@@ -402,13 +382,15 @@ public:
 			else if (turretPad->GetButton(2))
 				shooterSpeed = -0.90;
 			else if (turretPad->GetButton(3))
+				shooterSpeed = 0.78;
+			else if (turretPad->GetButton(4))
 				shooterSpeed = MAX_SPEED;
 			autoAiming = turretPad->GetRightTrigger();
 			
 			cameraTimer->Reset();
 			cameraTimer->Start();
 			
-			/*if (camera.IsFreshImage() && !launching)
+			if (autoAiming && camera.IsFreshImage())
 			{
 				HSLImage *image = camera.GetImage();
 				
@@ -425,14 +407,12 @@ public:
 						targetWidth = target.m_width;
 						targetDistance = getDistance(targetWidth);
 						
-						if (autoAiming) // aim and update shooter speed autonomously
-						{
-							rotateTurret(newPosition);
-							shooterSpeed = getSpeed(targetDistance);
-						}
+						// aim and update shooter speed autonomously
+						rotateTurret(newPosition);
+						shooterSpeed = getSpeed(targetDistance);
 					}
 				}
-			}*/
+			}
 			cameraTimer->Stop();
 			if (!autoAiming) // aim and update shooter speed manually
 			{
@@ -445,7 +425,6 @@ public:
 			ds->PrintfLine(DriverStationLCD::kUser_Line1, "x pos: %.2f", newPosition);
 			ds->PrintfLine(DriverStationLCD::kUser_Line2, "target distance: %.2f", targetDistance);
 			ds->PrintfLine(DriverStationLCD::kUser_Line3, "shooter speed: %.2f", shooterSpeed);
-			//ds->PrintfLine(DriverStationLCD::kUser_Line3, "gyro angle: %.2f", elevationAngle);
 			//ds->PrintfLine(DriverStationLCD::kUser_Line6, "lever angle: %.2f", leverAngle);
 			ds->PrintfLine(DriverStationLCD::kUser_Line4, "turret angle: %.2f", turretAngle);
 			ds->PrintfLine(DriverStationLCD::kUser_Line5, "balls: %d", ballCounter);
