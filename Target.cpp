@@ -20,27 +20,27 @@
 // Returns target with greatest score for sorting
 bool compareTargetTop(Target t1, Target t2)
 {
-	double t1Score = (t1.m_areaScore + t1.m_yPos) / 2;
-	double t2Score = (t2.m_areaScore + t2.m_yPos) / 2;
-	return (t1Score < t2Score);
+	double t1Score = (t1.m_areaScore - t1.m_yPos) / 2;
+	double t2Score = (t2.m_areaScore - t2.m_yPos) / 2;
+	return (t1Score > t2Score);
 }
 bool compareTargetLeft(Target t1, Target t2)
 {
 	double t1Score = (t1.m_areaScore - t1.m_xPos) / 2;
 	double t2Score = (t2.m_areaScore - t2.m_xPos) / 2;
-	return (t1Score < t2Score);
+	return (t1Score > t2Score);
 }
 bool compareTargetRight(Target t1, Target t2)
 {
 	double t1Score = (t1.m_areaScore + t1.m_xPos) / 2;
 	double t2Score = (t2.m_areaScore + t2.m_xPos) / 2;
-	return (t1Score < t2Score);
+	return (t1Score > t2Score);
 }
 bool compareTargetBottom(Target t1, Target t2)
 {
-	double t1Score = (t1.m_areaScore - t1.m_yPos) / 2;
-	double t2Score = (t2.m_areaScore - t2.m_yPos) / 2;
-	return (t1Score < t2Score);
+	double t1Score = (t1.m_areaScore + t1.m_yPos) / 2;
+	double t2Score = (t2.m_areaScore + t2.m_yPos) / 2;
+	return (t1Score > t2Score);
 }
 
 char* Target::TargetToString(TargetType targetType)
