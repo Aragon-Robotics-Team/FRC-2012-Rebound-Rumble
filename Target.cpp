@@ -61,7 +61,7 @@ char* Target::TargetToString(TargetType targetType)
 }
 
 // Returns the topmost target found in camera vision
-Target Target::FindRectangularTarget(HSLImage *image, TargetType targetType)
+Target Target::FindRectangularTarget(HSLImage *image, TargetType targetType = kTopTarget)
 {
 	// set threshold based on hue, saturation, luminance
 	BinaryImage *binaryImage = image->ThresholdHSL(HUE_MIN, HUE_MAX, SAT_MIN, SAT_MAX, LUM_MIN, LUM_MAX);
