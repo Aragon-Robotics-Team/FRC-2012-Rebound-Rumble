@@ -9,11 +9,11 @@
  */
 
 // Configure constants for thresholding image to get light from red LED
-#define HUE_MIN 50
+#define HUE_MIN 200
 #define HUE_MAX 255
 #define SAT_MIN 0
 #define SAT_MAX 255
-#define LUM_MIN 150
+#define LUM_MIN 60
 #define LUM_MAX 255
 #define EROSION_ITERATIONS 3
 
@@ -63,39 +63,54 @@ char* Target::TargetToString(TargetType targetType)
 // Returns the topmost target found in camera vision
 Target Target::FindRectangularTarget(HSLImage *image, TargetType targetType = kTopTarget)
 {
+	ParticleFilterCriteria2 criteria[] = {
+								{IMAQ_MT_BOUNDING_RECT_WIDTH, 20, 400, false, false},
+								{IMAQ_MT_BOUNDING_RECT_HEIGHT, 40, 400, false, false}
+	};
+	
 	// set threshold based on hue, saturation, luminance
-	BinaryImage *binaryImage = image->ThresholdHSL(HUE_MIN, HUE_MAX, SAT_MIN, SAT_MAX, LUM_MIN, LUM_MAX);
-	Image *processedImage = binaryImage->GetImaqImage();
+	BinaryImage *binaryImage = image->ThresholdHSL(HUE_MIN, HUE_MAX, SAT_MIN, SAT_MAX, LUM_MIN, LUM_MAX); // get just red target pixels
+	BinaryImage *bigObjectsImage = binaryImage->RemoveSmallObjects(false, 2);  // remove small objects (noise)
+	BinaryImage *convexHullImage = bigObjectsImage->ConvexHull(false);  // fill in partial and full rectangles
+	BinaryImage *filteredImage = convexHullImage->ParticleFilter(criteria, 2);  // find the rectangles
+	vector<ParticleAnalysisReport> *reports = filteredImage->GetOrderedParticleAnalysisReports();  // get the results
+	
+	/*Image *processedImage = binaryImage->GetImaqImage();
 	// fill rectangles with convex hull function
 	imaqConvexHull(processedImage, processedImage, true);
 	// remove small particles
 	imaqSizeFilter(processedImage, processedImage, true, EROSION_ITERATIONS, IMAQ_KEEP_LARGE, NULL);
 	
 	int particleCount;
-	frcCountParticles(processedImage, &particleCount);
+	frcCountParticles(processedImage, &particleCount);*/
 	
 	vector<Target> sortedTargets;
 	
 	// Fill target vector based on particles
-	for (int i = 0; i < particleCount; i++)
-	{
-		ParticleAnalysisReport report;
-		frcParticleAnalysis(processedImage, i, &report);
+	//for (int i = 0; i < particleCount; i++)
+	//{
+	for (unsigned i = 0; i < reports->size(); i++) {
+		ParticleAnalysisReport *r = &(reports->at(i));
+		//ParticleAnalysisReport report;
+		//frcParticleAnalysis(processedImage, i, &report);
 		Target target;
-		target.m_xPos = report.center_mass_x_normalized;
-		target.m_yPos = report.center_mass_y_normalized;
-		target.m_width = report.boundingRect.width;
-		target.m_height = report.boundingRect.height;
-		target.m_areaScore = report.particleArea / (target.m_width * target.m_height);
+		target.m_xPos = r->center_mass_x_normalized;
+		target.m_yPos = r->center_mass_y_normalized;
+		target.m_width = r->boundingRect.width;
+		target.m_height = r->boundingRect.height;
+		target.m_areaScore = r->particleArea / (target.m_width * target.m_height);
 		
-		// add to vector if area score is reasonable (resembles rectangle)
-		if (target.m_width > 30 && target.m_height > 30 && target.m_areaScore > 0.60)
+		// add results to vector
+		//if (target.m_width > 30 && target.m_height > 30) && target.m_areaScore > 0.60)
 			sortedTargets.push_back(target);
 	}
 	
-	// delete binary and imaq images
+	// delete binary images
+	delete reports;
+	delete filteredImage;
+	delete convexHullImage;
+	delete bigObjectsImage;
 	delete binaryImage;
-	imaqDispose(processedImage);
 	
 	switch (targetType)
 	{
