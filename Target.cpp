@@ -9,13 +9,13 @@
  */
 
 // Configure constants for thresholding image to get light from red LED
-#define HUE_MIN 200
+#define HUE_MIN 50
 #define HUE_MAX 255
 #define SAT_MIN 0
 #define SAT_MAX 255
-#define LUM_MIN 60
+#define LUM_MIN 175
 #define LUM_MAX 255
-#define EROSION_ITERATIONS 3
+#define EROSION_ITERATIONS 2
 
 // Returns target with greatest score for sorting
 bool compareTargetTop(Target t1, Target t2)
@@ -64,13 +64,13 @@ char* Target::TargetToString(TargetType targetType)
 Target Target::FindRectangularTarget(HSLImage *image, TargetType targetType = kTopTarget)
 {
 	ParticleFilterCriteria2 criteria[] = {
-								{IMAQ_MT_BOUNDING_RECT_WIDTH, 20, 400, false, false},
+								{IMAQ_MT_BOUNDING_RECT_WIDTH, 30, 400, false, false},
 								{IMAQ_MT_BOUNDING_RECT_HEIGHT, 40, 400, false, false}
 	};
 	
 	// set threshold based on hue, saturation, luminance
 	BinaryImage *binaryImage = image->ThresholdHSL(HUE_MIN, HUE_MAX, SAT_MIN, SAT_MAX, LUM_MIN, LUM_MAX); // get just red target pixels
-	BinaryImage *bigObjectsImage = binaryImage->RemoveSmallObjects(false, 2);  // remove small objects (noise)
+	BinaryImage *bigObjectsImage = binaryImage->RemoveSmallObjects(false, EROSION_ITERATIONS);  // remove small objects (noise)
 	BinaryImage *convexHullImage = bigObjectsImage->ConvexHull(false);  // fill in partial and full rectangles
 	BinaryImage *filteredImage = convexHullImage->ParticleFilter(criteria, 2);  // find the rectangles
 	vector<ParticleAnalysisReport> *reports = filteredImage->GetOrderedParticleAnalysisReports();  // get the results

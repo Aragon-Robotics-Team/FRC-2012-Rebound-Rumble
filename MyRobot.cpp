@@ -9,26 +9,32 @@
 
 #define AUTO_WAIT_TIME 0.0 // configure before each match for autonomous (+3 sec to shoot)
 #define AUTO_SHOOT_TIME 10.0 // time in seconds for shooting
-#define AUTO_LEVER_TIME 2.5 // time in seconds for using lever; 0 = no backing
-#define AUTO_BACK_TIME 2.5 // time in seconds backing to bridge
-#define AUTO_DISTANCE 9.0 // feet from key to bridge
+#define AUTO_BACK_TIME 3.0 // time in seconds backing to bridge
+#define AUTO_LEVER_TIME 0.0 // time in seconds for using lever
+#define AUTO_BRIDGE 1 // bridge to back toward (1 = coopertition, 2 = alliance)
+#define AUTO_FEED false // reverse conveyor in autonomous instead of shooting
+
+#define AUTO_DISTANCE 4.2 // wheel revolutions: from key to bridge
 #define AUTO_BALL_COUNT 2 // number of balls in possession at start of hybrid
 
 #define MAX_SPEED 0.9 // maximum shooter speed
 #define FENDER_SPEED 0.565 // speed to shoot from fender for middle hoops
-#define KEY_SPEED 0.82 // speed to shoot from key for top hoop
-#define AUTO_SPEED 0.82 // starting speed for autonomous: 0.79 = front, 0.82 = midkey
+#define KEY_SPEED 0.83 // speed to shoot from key for top hoop
+#define AUTO_SPEED 0.83 // starting speed for autonomous: 0.8 = front, 0.85 = midkey
 
-#define TURRET_MIN 390.0 // minimum turret angle from pot
-#define TURRET_MAX 610.0 // maximum turret angle from pot
-#define TURRET_CENTER 498.0 // center value for turret angle from pot
-#define LEVER_MIN 150.0 // minimum lever angle from pot
-#define LEVER_MAX 260.0 // maximum lever angle from pot
+#define TURRET_MIN 120.0 // minimum turret angle from pot
+#define TURRET_MAX 355.0 // maximum turret angle from pot
+#define TURRET_CENTER 245.0 // center value for turret angle from pot
+#define LEVER_MIN 165.0 // minimum lever angle from pot
+#define LEVER_MAX 265.0 // maximum lever angle from pot
 
 #define FRONT_LEFT 1 // drive motors, don't change
 #define REAR_LEFT 2
 #define FRONT_RIGHT 3
 #define REAR_RIGHT 4
+
+#define TURRET_P 0.3 // proportional value for turret PD; adjust later
+#define TURRET_D 0.05 // derivative value for turret PD; adjust later
 
 /**
  * The SimpleRobot class is the base of a robot application that will automatically call your
@@ -48,13 +54,14 @@ class MyRobot : public SimpleRobot
 	Victor *turretMotor; // Window motor that powers Lazy Susan
 	Victor *leverMotor; // lever motor
 	
-	DigitalInput *entranceSwitch; // rotary switch that detects balls in conveyor
+	//DigitalInput *entranceSwitch; // rotary switch that detects balls in conveyor
 	DigitalInput *exitSwitch; // limit switch that detects balls exiting shooter
 	AnalogChannel *turretPot; // potentiometer for measuring turretAngle
 	AnalogChannel *leverPot; // potentiometer for measuring leverAngle
 	
 	Timer *switchTimer1; // timer that measures time between counting incoming balls
 	Timer *switchTimer2; // timer that measures time between counting exiting balls
+	Timer *leverTimer; // timer that measures time after lever deployment
 	
 	float leftSpeed, rightSpeed; // speed of left and right drive motors
 	float targetDistance; // distance from target in ft
@@ -64,14 +71,15 @@ class MyRobot : public SimpleRobot
 	float shooterSpeed; // speed of shooterMotor
 	float leverAngle; // angle of lever
 	float elevationAngle; // angle of robot from ground
+	float lastError; // previous error in auto-targeting
 	int ballCounter; // number of balls in possession
-	bool switch1Pressed; // if limit switch (ballCounter) is pressed
+	//bool switch1Pressed; // if limit switch (ballCounter) is pressed
 	bool switch2Pressed; // if exit limit switch is pressed
 	bool autoAiming; // if camera autonomously aims turret
 	bool launching; // if firing ball
 	
 	typedef enum {
-		kShooting, kLever, kStopped, kTeleOp
+		kShooting, kBack, kLever, kStopped, kTeleOp
 	} RobotState; // robot state
 	RobotState robotState;
 	
@@ -82,12 +90,12 @@ public:
 	{
 		// Initialize drivetrain motors
 		drive = new RobotDrive(FRONT_LEFT, REAR_LEFT, FRONT_RIGHT, REAR_RIGHT);
-		//leftEncoder = new Encoder(3, 4); // configure later- Digital Input
-		//rightEncoder = new Encoder(5, 6);
+		leftEncoder = new Encoder(3, 4); // configure later- Digital Input
+		rightEncoder = new Encoder(5, 6);
 		
-		//const double FEET_PP = (0.5 * M_PI) / 250 / 4.67; // feet per pulse
-		//leftEncoder->SetDistancePerPulse(FEET_PP); // 250 pulses per revolution
-		//rightEncoder->SetDistancePerPulse(FEET_PP); // gearing = 4.67:1
+		const double FEET_PP = (0.5 * M_PI) / 250 / 4.67; // feet per pulse
+		leftEncoder->SetDistancePerPulse(FEET_PP); // 250 pulses per revolution
+		rightEncoder->SetDistancePerPulse(FEET_PP); // gearing = 4.67:1
 		
 		// Initialize gamepads and Kinect
 		drivePad = new Gamepad(1);
@@ -102,16 +110,18 @@ public:
 		leverMotor = new Victor(10);
 		
 		// Initialize sensors and timers (Analog slot 3 = dead?)
-		entranceSwitch = new DigitalInput(1);
+		//entranceSwitch = new DigitalInput(1);
 		exitSwitch = new DigitalInput(2);
 		turretPot = new AnalogChannel(2);
 		leverPot = new AnalogChannel(4);
 		
 		switchTimer1 = new Timer();
 		switchTimer2 = new Timer();
+		leverTimer = new Timer();
 		
 		// Initialize variables
 		shooterSpeed = AUTO_SPEED;
+		lastError = 0.0;
 		ballCounter = 0;
 		autoAiming = false;
 		launching = false;
@@ -141,6 +151,9 @@ public:
 			break;
 		case kShooting:
 			string = "shooting";
+			break;
+		case kBack:
+			string = "backing";
 			break;
 		case kLever:
 			string = "lever";
@@ -179,7 +192,7 @@ public:
 		//const int BALL_LIMIT = 3; // max balls in possession
 		
 		// update ball counter (based on rotary and limit switches)
-		if (!switch1Pressed && entranceSwitch->Get())
+		/*if (!switch1Pressed && entranceSwitch->Get())
 		{
 			ballCounter++;
 			switch1Pressed = true;
@@ -189,7 +202,7 @@ public:
 		{
 			switch1Pressed = false;
 			timer1->Reset();
-		}
+		}*/
 		if (!switch2Pressed && exitSwitch->Get())
 		{
 			ballCounter--;
@@ -214,13 +227,28 @@ public:
 	void updateLever(bool rotateDown = false, bool rotateUp = false, bool override = true)
 	{
 		leverAngle = leverPot->GetValue();
-		// rotate lever if Button 2 pressed
+		// rotate lever if left trigger pressed
 		if (rotateUp && (leverAngle >= LEVER_MIN || override))
+		{
 			leverMotor->Set(1.0);
+			leverTimer->Reset();
+		}
 		else if (rotateDown && (leverAngle <= LEVER_MAX || override))
+		{
 			leverMotor->Set(-1.0);
+			leverTimer->Reset();
+		}
 		else
-			leverMotor->Set(0.0);
+		{
+			if (leverTimer->Get() > 10.0 && leverAngle > (LEVER_MIN + 10.0)) // if untouched for 10 seconds
+				leverMotor->Set(1.0);
+			else
+			{
+				if (leverTimer->Get() == 0.0)
+					leverTimer->Start();
+				leverMotor->Set(0.0);
+			}
+		}
 	}
 	
 	// get distance to target based on camera image's target width in pixels
@@ -231,24 +259,17 @@ public:
 	}
 	
 	// rotates turret and Lazy Susan to face target based on camera image
-	void rotateTurret(float position)//, bool center = false)
-	{		
+	void rotateTurret(float position)
+	{
 		turretAngle = turretPot->GetValue();
-		// return to center
-		/*if (center == true)
-		{
-			if (turretAngle < TURRET_CENTER - 10.0)
-				position = 0.6;
-			else if (turretAngle > TURRET_CENTER + 10.0)
-				position = -0.6;
-		}*/
 		//if ((turretAngle <= TURRET_MIN && position < 0.0) || (turretAngle >= TURRET_MAX && position > 0.0))
 			//position = 0.0;
 		
-		if (fabs(position) <= 0.005)
-			position = 0.0;
+		float derivative = position - lastError;
+		float output = (TURRET_P * position) + (TURRET_D * derivative);
+		lastError = position;
 		
-		turretMotor->Set(MAX_SPEED * position / 2);
+		turretMotor->Set(output);
 	}
 	
 	// returns speed of shooter motor based on distance from target
@@ -259,9 +280,9 @@ public:
 		// if joystick override
 		if (override)
 		{
-			if (distance < -0.1)
+			if (distance < -0.25) // right joystick up
 				power = shooterSpeed + 0.0001;
-			else if (distance > 0.1)
+			else if (distance > 0.25) // right joystick down
 				power = shooterSpeed - 0.0001;
 			else
 				power = shooterSpeed;
@@ -332,32 +353,41 @@ public:
 		kinect = Kinect::GetInstance();
 		
 		// reset encoders and start counting pulses
-		//leftEncoder->Reset();
-		//rightEncoder->Reset();
-		//leftEncoder->Start();
-		//rightEncoder->Start();
+		leftEncoder->Reset();
+		rightEncoder->Reset();
+		leftEncoder->Start();
+		rightEncoder->Start();
 		
-		//double encoderDistance = 0.0;
+		double encoderDistance = 0.0;
 		
 		Timer *autoTimer = new Timer();
-		//Timer *backTimer = new Timer();
 		autoTimer->Start();
 		ballCounter = AUTO_BALL_COUNT;
 		shooterSpeed = AUTO_SPEED;
 		
+		bool kinectOverride = false;
+		
 		/*A loop is necessary to retrieve the latest Kinect data and update the motors */
 		while (IsAutonomous())
 		{
-			//encoderDistance = max(leftEncoder->GetDistance(), rightEncoder->GetDistance());
+			encoderDistance = max(leftEncoder->GetDistance(), rightEncoder->GetDistance());
 			
 			if (kinect->GetNumberOfPlayers() > 0) // if Kinect detects player
 			{
+				if (autoTimer->Get() < AUTO_WAIT_TIME)
+					robotState = kStopped;
+				else if (autoTimer->Get() < AUTO_WAIT_TIME + AUTO_SHOOT_TIME && !kinectOverride)
+					robotState = kShooting;
+				
 				if (fabs(leftArm->GetY()) < 0.1 && fabs(rightArm->GetY()) < 0.1) // T mode
 					robotState = kStopped;
-				else if (leftArm->GetRawButton(3)) // left leg out, R mode
-					robotState = kLever;
+				//else if (leftArm->GetRawButton(1) || leftArm->GetRawButton(2)) // left leg out, R mode
+					//robotState = kLever;
 				else if (leftArm->GetY() < -0.9 && rightArm->GetY() < -0.9) // A mode
-					robotState = kShooting;
+				{
+					robotState = kBack;
+					kinectOverride = true;
+				}
 			}
 			else // run autonomous code
 			{
@@ -365,42 +395,56 @@ public:
 					robotState = kStopped;
 				else if (autoTimer->Get() < AUTO_WAIT_TIME + AUTO_SHOOT_TIME)
 					robotState = kShooting;
-				else if (autoTimer->Get() < AUTO_WAIT_TIME + AUTO_SHOOT_TIME + AUTO_LEVER_TIME)
-					robotState = kLever;
+				else if (autoTimer->Get() < AUTO_WAIT_TIME + AUTO_SHOOT_TIME + AUTO_BACK_TIME)
+					robotState = kBack;
 				else
 					robotState = kStopped;
 			}
 			
 			switch (robotState)
 			{				
-			case kLever: // if robot is backing or using lever
+			case kBack: // if robot is backing
 				conveyorMotor->Set(0.0);
-				//if (backTimer->Get() == 0.0)
-					//backTimer->Start();
-				//else if (backTimer->Get() < AUTO_BACK_TIME) //(fabs(encoderDistance) < AUTO_DISTANCE)
-					drive->TankDrive(0.6, 0.6);
-				//else if (backTimer->Get() >= AUTO_BACK_TIME) //(encoderDistance >= AUTO_DISTANCE)
-				//{
-					//drive->TankDrive(0.0, 0.0);
-					//updateLever(true, false); // lower lever
-				//}
+				if (fabs(encoderDistance) < AUTO_DISTANCE)
+				{
+					updateLever(false, false); // stop lever
+					if (AUTO_BRIDGE == 1) // coopertition bridge (middle position)
+						drive->TankDrive(0.65, 0.65);
+					else if (AUTO_BRIDGE == 2) // alliance bridge (right position)
+						drive->TankDrive(0.75, 0.75);
+					else
+						drive->TankDrive(0.0, 0.0);
+				}
+				else if (encoderDistance >= AUTO_DISTANCE && kinectOverride)
+				{
+					drive->TankDrive(0.0, 0.0);
+					updateLever(true, false); // lower lever
+				}
+				break;
+			
+			case kLever: // if robot is using lever
+				conveyorMotor->Set(0.0);
+				drive->TankDrive(0.0, 0.0);
+				updateLever(true, false); // lower lever
 				break;
 				
 			case kShooting: // if robot is shooting
 				drive->TankDrive(0.0, 0.0);
-				conveyorMotor->Set(1.0);
-				//if (autoTimer->Get() < 2.0)
-					//rotateTurret(0.0, true);
-				//if (backTimer->Get() > 0.0)
-					//backTimer->Reset();
+				if (AUTO_FEED == true)
+					conveyorMotor->Set(-1.0);
+				else
+					conveyorMotor->Set(1.0);
+				if (autoTimer->Get() > 5.0 + AUTO_WAIT_TIME)
+					shooterSpeed = AUTO_SPEED + 0.007;
+				else
+					shooterSpeed = AUTO_SPEED;
 				break;
 				
 			case kStopped: default: // if robot is stopped
 				drive->TankDrive(0.0, 0.0);
 				conveyorMotor->Set(0.0);
+				updateLever(false, false); // stop lever
 				//updateLever(false, true); // retract lever if necessary
-				//if (backTimer->Get() > 0.0)
-					//backTimer->Reset();
 				break;
 			}
 			
@@ -433,15 +477,15 @@ public:
 			DriverStationLCD *ds = DriverStationLCD::GetInstance();
 			ds->PrintfLine(DriverStationLCD::kUser_Line1, "state: %s", StateToString(robotState));
 			ds->PrintfLine(DriverStationLCD::kUser_Line2, "auto time: %f", autoTimer->Get());
-			//ds->PrintfLine(DriverStationLCD::kUser_Line3, "backing time: %f", backTimer->Get());
-			//ds->PrintfLine(DriverStationLCD::kUser_Line3, "encoder: %f", encoderDistance);
+			ds->PrintfLine(DriverStationLCD::kUser_Line3, "encoder: %f", encoderDistance);
+			ds->PrintfLine(DriverStationLCD::kUser_Line4, "shooter speed: %.2f", shooterSpeed);
+			ds->PrintfLine(DriverStationLCD::kUser_Line5, "balls: %d", ballCounter);
 			ds->UpdateLCD();
 			
 			Wait(.01); // Delay 10ms to reduce processing load
 		}
 		
 		autoTimer->Reset();
-		//backTimer->Reset();
 		robotState = kStopped;
 	}
 		
@@ -479,8 +523,7 @@ public:
 			// update conveyor, shooter, and lever based on input
 			launching = turretPad->GetButton(6) || turretPad->GetRightTrigger();
 			updateConveyor(switchTimer1, switchTimer2);
-			updateLever(drivePad->GetLeftTrigger(), drivePad->GetRightTrigger());//,
-					//drivePad->GetButton(3));
+			updateLever(drivePad->GetLeftTrigger(), drivePad->GetRightTrigger());
 			
 			// update target for shooter and check if auto-aiming
 			targetType = updateTarget(turretPad->GetDPad());
@@ -534,11 +577,11 @@ public:
 			ds->PrintfLine(DriverStationLCD::kUser_Line2, "target distance: %.2f", targetDistance);
 			ds->PrintfLine(DriverStationLCD::kUser_Line3, "shooter speed: %.2f", shooterSpeed);
 			ds->PrintfLine(DriverStationLCD::kUser_Line4, "target width: %.2f", targetWidth);
-			//ds->PrintfLine(DriverStationLCD::kUser_Line6, "lever angle: %.2f", leverAngle);
-			//ds->PrintfLine(DriverStationLCD::kUser_Line4, "turret angle: %.2f", turretAngle);
-			ds->PrintfLine(DriverStationLCD::kUser_Line5, "balls: %d", ballCounter);
+			ds->PrintfLine(DriverStationLCD::kUser_Line5, "lever angle: %.2f", leverAngle);
+			ds->PrintfLine(DriverStationLCD::kUser_Line6, "turret angle: %.2f", turretAngle);
+			//ds->PrintfLine(DriverStationLCD::kUser_Line5, "balls: %d", ballCounter);
 			//ds->PrintfLine(DriverStationLCD::kUser_Line6, "vision time: %.5f", cameraTimer->Get());
-			ds->PrintfLine(DriverStationLCD::kUser_Line6, "target: %s", Target::TargetToString(targetType));
+			//ds->PrintfLine(DriverStationLCD::kUser_Line6, "target: %s", Target::TargetToString(targetType));
 			ds->UpdateLCD();
 			
 			Wait(0.001);	// wait for a motor update time
@@ -547,4 +590,3 @@ public:
 };
 
 START_ROBOT_CLASS(MyRobot);
-
